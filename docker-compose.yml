@@ -1,0 +1,40 @@
+services:
+  api:
+    image: matsu-toolbox-api:local
+    build:
+      context: .
+    container_name: matsu-toolbox-api
+    ports:
+      - 18083:8080
+    environment:
+      - PORT=8080
+      - DATABASE_URL=postgres://matsu-toolbox:matsu-toolbox-pass@toolbox-db:5432/matsu-toolbox
+      - AUTH_ISSUER=http://localhost:18081
+      - AUTH_AUDIENCE=matsu-toolbox-api
+      - AUTH_JWKS_URL=http://host.docker.internal:18081/.well-known/jwks.json
+      - AUTH_JWKS_CACHE_SECONDS=600
+      - AUTH_JWKS_TIMEOUT_MILLISECONDS=5000
+    depends_on:
+      toolbox-db:
+        condition: service_healthy
+
+  toolbox-db:
+    image: postgres:16-alpine
+    container_name: matsu-toolbox-db
+    ports:
+      - 15433:5432
+    environment:
+      - POSTGRES_DB=matsu-toolbox
+      - POSTGRES_USER=matsu-toolbox
+      - POSTGRES_PASSWORD=matsu-toolbox-pass
+      - TZ=Asia/Tokyo
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U matsu-toolbox -d matsu-toolbox']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - toolbox_db_data:/var/lib/postgresql/data
+
+volumes:
+  toolbox_db_data:
