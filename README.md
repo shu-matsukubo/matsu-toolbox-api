@@ -188,3 +188,15 @@ docker compose run --rm api npm run check
 docker compose run --rm api npm test
 docker compose run --rm api npm run build
 ```
+
+Run the real PostgreSQL and Drizzle repository integration tests in the isolated test profile:
+
+```bash
+docker compose --profile test run --rm test
+docker compose --profile test stop test-db
+```
+
+The test service applies every migration twice to verify repeatability, then exercises notes and
+bookmarks through the real Drizzle repository. Its PostgreSQL uses test-only credentials, exposes
+no host port, and stores data only in `tmpfs`; it does not mount `toolbox_db_data`. Both test
+services use an internal-only network and cannot depend on Auth, BFF, or another API.
