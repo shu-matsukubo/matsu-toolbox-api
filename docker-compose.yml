@@ -1,5 +1,5 @@
 services:
-  api:
+  toolbox-api:
     image: matsu-toolbox-api:development
     build:
       context: .
@@ -46,3 +46,4 @@ services:
 
 volumes:
   toolbox_db_data:
+    name: matsu-toolbox-db-data

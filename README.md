@@ -38,7 +38,7 @@ Compose bind-mounts the source into `/app`, keeps container-installed dependenci
 Migrations may also be run explicitly and are safe to repeat:
 
 ```bash
-docker compose run --rm api npm run db:migrate
+docker compose run --rm toolbox-api npm run db:migrate
 ```
 
 Stop the services without deleting the database volume:
@@ -186,11 +186,11 @@ The Docker image includes the development toolchain so the main gates are reprod
 same Node 22 environment:
 
 ```bash
-docker compose run --rm api npm run check
-docker compose run --rm api npm test
-docker compose run --rm api npm run build
+docker compose run --rm toolbox-api npm run check
+docker compose run --rm toolbox-api npm test
+docker compose run --rm toolbox-api npm run build
 ```
 
-Docker Compose is limited to the local runtime (`api` and `toolbox-db`). The unit tests and quality
+Docker Compose is limited to the local runtime (`toolbox-api` and `toolbox-db`). The unit tests and quality
 gates above remain available as package scripts. `npm run test:integration` also remains available
 when `TEST_DATABASE_URL` points to a separately managed test PostgreSQL database.
