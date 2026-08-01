@@ -1,196 +1,103 @@
-# matsu Toolbox API
+# matsu-toolbox-api
 
-`matsu-toolbox-api` is an independent resource server for small personal tools. It uses
-`matsu-auth` for identity but does not contain household-accounting domain logic and does not
-share the databases or Redis instances used by other matsu services.
+`matsu-toolbox-api` は、ノート、ブックマーク、テキスト検査を提供する独立したリソースサーバーです。認証には `matsu-auth` を利用しますが、家計簿などの他サービスとはデータベースを共有しません。
 
-The current features are:
+ローカルの API は <http://localhost:18083>、Swagger UI は <http://localhost:18083/docs> で確認できます。
 
-- per-user notes
-- per-user bookmarks with optional exact-tag filtering
-- stateless Unicode-aware text inspection
+## 必要条件
 
-Every `/api/*` route requires an RS256 access token issued for the `matsu-toolbox-api` audience.
-Ownership is always derived from the verified JWT `sub`; a client-supplied user identifier is
-never used.
+- Docker Desktop と Docker Compose
+- ホスト上で Node.js コマンドを実行する場合は Node.js 22 以上と npm
+- 認証が必要な API を確認する場合は、別途起動した `matsu-auth`
 
-## Technology
+## 環境構築と起動
 
-- Node.js 22 and strict TypeScript
-- Hono, `@hono/zod-openapi`, and Swagger UI
-- Zod request/response schemas and generated OpenAPI
-- `jose` JWT/JWKS verification
-- PostgreSQL 16 and Drizzle ORM
-- ESLint, Prettier, and the Node test runner through `tsx`
-- Docker Compose
-
-## Start, migrate, and stop
-
-Start the hot-reload API and its dedicated PostgreSQL database:
+通常のローカル開発は Docker Compose を使用します。
 
 ```bash
-docker compose up --build
+docker compose up --build toolbox-api
 ```
 
-Compose bind-mounts the source into `/app`, keeps container-installed dependencies in a dedicated
-`/app/node_modules` volume, runs the checked-in SQL migrations, and then starts `tsx watch` through
-`npm run dev`. Polling is enabled so edits made on Windows are detected through Docker Desktop.
-Migrations may also be run explicitly and are safe to repeat:
+このコマンドで専用の PostgreSQL も起動し、migration の適用後に hot reload 付きの開発サーバーを開始します。
 
-```bash
-docker compose run --rm toolbox-api npm run db:migrate
-```
-
-Stop the services without deleting the database volume:
+停止するときは、データベースの named volume を残したままサービスを終了します。
 
 ```bash
 docker compose down
 ```
 
-Do not add `--volumes` unless the local Toolbox data is intentionally being discarded.
+ローカルデータを意図的に破棄する場合を除き、`--volumes` は付けないでください。
 
-When a local TLS inspection product requires a custom CA for package installation, pass the CA
-as a BuildKit secret instead of disabling certificate validation:
+## ホスト上での開発
 
-```bash
-docker build --target development --secret id=npm_ca,src=/path/to/local-ca.pem -t matsu-toolbox-api:development .
-docker compose up --no-build
-```
-
-The CA secret is available only during `npm ci` and is not copied into the image.
-
-## Local ports
-
-| Service            | Host    | Container |
-| ------------------ | ------- | --------- |
-| Toolbox API        | `18083` | `8080`    |
-| Toolbox PostgreSQL | `15433` | `5432`    |
-
-Local database defaults:
-
-```text
-database: matsu-toolbox
-user: matsu-toolbox
-password: matsu-toolbox-pass
-```
-
-These values are for local development only.
-
-## Environment variables
-
-| Variable                         | Local default                                                               | Purpose               |
-| -------------------------------- | --------------------------------------------------------------------------- | --------------------- |
-| `PORT`                           | `8080`                                                                      | API listen port       |
-| `DATABASE_URL`                   | `postgres://matsu-toolbox:matsu-toolbox-pass@localhost:15433/matsu-toolbox` | PostgreSQL connection |
-| `AUTH_ISSUER`                    | `http://localhost:18081`                                                    | Required JWT issuer   |
-| `AUTH_AUDIENCE`                  | `matsu-toolbox-api`                                                         | Required JWT audience |
-| `AUTH_JWKS_URL`                  | `http://localhost:18081/.well-known/jwks.json`                              | JWKS endpoint         |
-| `AUTH_JWKS_CACHE_SECONDS`        | `600`                                                                       | JWKS cache lifetime   |
-| `AUTH_JWKS_TIMEOUT_MILLISECONDS` | `5000`                                                                      | JWKS request timeout  |
-
-Docker Compose changes `DATABASE_URL` to use `toolbox-db` and `AUTH_JWKS_URL` to use
-`host.docker.internal`.
-
-## URLs
-
-- API: <http://localhost:18083>
-- Health: <http://localhost:18083/health>
-- OpenAPI JSON: <http://localhost:18083/openapi.json>
-- Swagger UI: <http://localhost:18083/docs>
-
-Protected endpoints:
-
-```text
-GET    /api/me
-POST   /api/notes
-GET    /api/notes
-GET    /api/notes/:noteId
-PATCH  /api/notes/:noteId
-DELETE /api/notes/:noteId
-POST   /api/bookmarks
-GET    /api/bookmarks?tag=optional
-GET    /api/bookmarks/:bookmarkId
-PATCH  /api/bookmarks/:bookmarkId
-DELETE /api/bookmarks/:bookmarkId
-POST   /api/tools/text/inspect
-```
-
-## Obtain a Toolbox token
-
-Start `matsu-auth`, register or log in with the Toolbox audience, and use the returned access
-token as a Bearer token:
-
-```bash
-curl -X POST http://localhost:18081/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"user@example.com","password":"password","audience":"matsu-toolbox-api"}'
-```
-
-```bash
-curl http://localhost:18083/api/me \
-  -H "Authorization: Bearer ACCESS_TOKEN"
-```
-
-Omitting `audience` asks Auth for its backward-compatible default `matsu-api` token. That token
-is intentionally rejected by this service.
-
-## JWT trust conditions
-
-The authentication middleware accepts only `Authorization: Bearer <token>` and requires:
-
-- `alg=RS256`
-- a non-empty `kid` resolved through the configured JWKS
-- a valid signature
-- exact `iss=http://localhost:18081`
-- exact `aud=matsu-toolbox-api`
-- valid integer `iat` and `exp` claims
-- `token_use=access`
-- a non-empty `sub`
-
-JWKS keys are cached. An unknown `kid` can trigger a JWKS refresh. Invalid tokens return a safe
-`401`; a JWKS transport failure is logged separately and returns a safe `503`. Internal JWT or
-SQL details are never returned to clients.
-
-The checked-in Auth development key and all development passwords are local fixtures. They must
-not be reused as production secrets.
-
-## Development commands
-
-Install dependencies:
+依存関係をインストールします。
 
 ```bash
 npm install
 ```
 
-On Windows PowerShell, use `npm.cmd` in place of `npm`.
+環境変数は [`.env.example`](./.env.example) を参照し、実行環境へ設定してください。接続先 PostgreSQL を用意してから、次の順に実行します。
 
 ```bash
+npm run db:migrate
 npm run dev
-npm run build
-npm run start
-npm run lint
-npm run typecheck
-npm run format
-npm run format:check
+```
+
+Windows PowerShell では、実行ポリシーの影響を避けるため `npm` の代わりに `npm.cmd` を使用します。
+
+主な設定項目は次のとおりです。
+
+- `PORT`: API の待受ポート
+- `DATABASE_URL`: Toolbox 専用 PostgreSQL の接続先
+- `AUTH_ISSUER` / `AUTH_AUDIENCE`: 受け入れるアクセストークンの発行者と対象
+- `AUTH_JWKS_URL`: 公開鍵の取得先
+- `AUTH_JWKS_CACHE_SECONDS` / `AUTH_JWKS_TIMEOUT_MILLISECONDS`: JWKS 取得のキャッシュとタイムアウト
+
+Docker Compose でのローカル既定値は [`docker-compose.yml`](./docker-compose.yml) を正本とします。
+
+## 開発と品質確認
+
+変更内容に応じて、以下のローカル品質ゲートを実行します。
+
+```bash
 npm run check
 npm test
-npm run db:migrate
-npm run openapi:generate
+npm run build
 npm run openapi:check
 ```
 
-The OpenAPI artifact at `openapi/openapi.json` is generated from the registered route schemas.
-Run `openapi:generate` after a contract change and `openapi:check` in verification.
+`npm run check` は lint、型検査、format 確認をまとめて実行します。API 仕様の正本は [`openapi/openapi.json`](./openapi/openapi.json) です。契約を変更した場合は `npm run openapi:generate` で更新し、`npm run openapi:check` で登録済みルートとの一致を確認してください。
 
-The Docker image includes the development toolchain so the main gates are reproducible in the
-same Node 22 environment:
+PostgreSQL を使う DB 統合テストは、開発 DB と分離したテスト専用 PostgreSQL を用意します。テスト用接続先を `DATABASE_URL` に指定して `npm run db:migrate` を実行した後、同じ接続先を `TEST_DATABASE_URL` に指定して実行してください。
 
 ```bash
-docker compose run --rm toolbox-api npm run check
-docker compose run --rm toolbox-api npm test
-docker compose run --rm toolbox-api npm run build
+npm run test:integration
 ```
 
-Docker Compose is limited to the local runtime (`toolbox-api` and `toolbox-db`). The unit tests and quality
-gates above remain available as package scripts. `npm run test:integration` also remains available
-when `TEST_DATABASE_URL` points to a separately managed test PostgreSQL database.
+通常の開発 DB、named volume、他サービスの DB を統合テストと共有しないでください。
+
+現時点では、このリポジトリに GitHub Actions の CI は導入されていません。Pull Request 前の確認は上記ローカル品質ゲートで行います。
+
+## 最小限の運用
+
+稼働確認には `GET /health` を使用します。コンテナの状態とログは次のコマンドで確認できます。
+
+```bash
+docker compose ps
+docker compose logs -f toolbox-api
+```
+
+migration を明示的に再確認する場合は、次を実行します。
+
+```bash
+docker compose run --rm toolbox-api npm run db:migrate
+```
+
+適用済み migration ファイルは変更せず、新しい migration を追加してください。本番向けの認証情報や秘密鍵をリポジトリへ追加しないでください。
+
+## 関連ドキュメント
+
+- [Toolbox API の責務と構成](https://github.com/shu-matsukubo/matsu-docs/blob/main/docs/components/toolbox-api.md)
+- [API 契約](https://github.com/shu-matsukubo/matsu-docs/blob/main/docs/architecture/api-contracts.md)
+- [認証とセッション](https://github.com/shu-matsukubo/matsu-docs/blob/main/docs/architecture/authentication.md)
+- [CI・静的解析・品質ゲート](https://github.com/shu-matsukubo/matsu-docs/blob/main/docs/architecture/quality-gates.md)
