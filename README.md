@@ -26,14 +26,16 @@ never used.
 
 ## Start, migrate, and stop
 
-Start the API and its dedicated PostgreSQL database:
+Start the hot-reload API and its dedicated PostgreSQL database:
 
 ```bash
-docker compose up -d --build
+docker compose up --build
 ```
 
-The API container runs the checked-in SQL migrations before starting. Migrations may also be
-run explicitly and are safe to repeat:
+Compose bind-mounts the source into `/app`, keeps container-installed dependencies in a dedicated
+`/app/node_modules` volume, runs the checked-in SQL migrations, and then starts `tsx watch` through
+`npm run dev`. Polling is enabled so edits made on Windows are detected through Docker Desktop.
+Migrations may also be run explicitly and are safe to repeat:
 
 ```bash
 docker compose run --rm api npm run db:migrate
@@ -51,8 +53,8 @@ When a local TLS inspection product requires a custom CA for package installatio
 as a BuildKit secret instead of disabling certificate validation:
 
 ```bash
-docker build --secret id=npm_ca,src=/path/to/local-ca.pem -t matsu-toolbox-api:local .
-docker compose up -d --no-build
+docker build --target development --secret id=npm_ca,src=/path/to/local-ca.pem -t matsu-toolbox-api:development .
+docker compose up --no-build
 ```
 
 The CA secret is available only during `npm ci` and is not copied into the image.
@@ -189,14 +191,6 @@ docker compose run --rm api npm test
 docker compose run --rm api npm run build
 ```
 
-Run the real PostgreSQL and Drizzle repository integration tests in the isolated test profile:
-
-```bash
-docker compose --profile test run --rm test
-docker compose --profile test stop test-db
-```
-
-The test service applies every migration twice to verify repeatability, then exercises notes and
-bookmarks through the real Drizzle repository. Its PostgreSQL uses test-only credentials, exposes
-no host port, and stores data only in `tmpfs`; it does not mount `toolbox_db_data`. Both test
-services use an internal-only network and cannot depend on Auth, BFF, or another API.
+Docker Compose is limited to the local runtime (`api` and `toolbox-db`). The unit tests and quality
+gates above remain available as package scripts. `npm run test:integration` also remains available
+when `TEST_DATABASE_URL` points to a separately managed test PostgreSQL database.

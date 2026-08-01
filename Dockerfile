@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22-bookworm-slim
+FROM node:22-bookworm-slim AS development
 
 WORKDIR /app
 
@@ -12,8 +12,7 @@ RUN --mount=type=secret,id=npm_ca,required=false \
     fi
 
 COPY . .
-RUN npm run build
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "npm run db:migrate && exec node dist/src/index.js"]
+CMD ["npm", "run", "dev"]
